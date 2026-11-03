@@ -1189,6 +1189,15 @@ html[data-theme="light"] #pnl-feb .mix-mas .mix-value { color:var(--mas-lt) !imp
 html[data-theme="light"] #pnl-feb :is(.hd-ver, #distCountBadge, #unitToggleBtn) {
   color:var(--muted) !important;
 }
+
+/* Estado del espejo visible también en la vista cuota/venta, por marca. */
+.dc-espejo-status {
+  padding:8px 16px; font-size:11px; font-weight:600; line-height:1.5;
+  color:var(--mid); background:var(--card2); border-bottom:1px solid var(--border);
+  overflow-wrap:anywhere;
+}
+.dc-espejo-status.with { color:var(--gt-tone-82,#c9a3ff); }
+.dc-espejo-status.pending { color:var(--orange); }
 </style>
 <script>
 // Cargar SheetJS desde localStorage (caché offline) o desde CDN
@@ -2206,6 +2215,7 @@ function openCard(id) {
         <span class="dc-status ${stCls}">${stTxt}</span>
         <span class="dc-canal-avpct ${pc}">${pFmtC(ch.avance_pct)}</span>
       </div>
+      ${_espejoEstadoHTML(d.id, canal)}
       ${instToggleHTML(ch)}
       <div class="dc-metrics">
         <div class="dc-metric cuota">
@@ -2263,6 +2273,33 @@ function _instIdsFor(ch) {
   });
   ids.sort((a,b) => (ch.instalaciones[b].venta_total||0) - (ch.instalaciones[a].venta_total||0));
   return ids;
+}
+
+// La ausencia solo se confirma con el archivo de la zona y mes activos cargado.
+function _espejoEstadoHTML(titularId, canal) {
+  const zona = _espejoData[_zonaActual];
+  const mes = getMonthKey();
+  let estado = 'pending', texto = 'Espejos sin cargar para este mes';
+  if (!_zonaActual) {
+    texto = 'Espejo por confirmar · zona sin seleccionar';
+  } else if (zona && Object.prototype.hasOwnProperty.call(zona, mes)) {
+    const marca = canal === 'AB' ? 'solgas' : 'masgas';
+    const entradas = _espejoEntriesForTitular(titularId)
+      .filter(en => String(en.marca || '').trim().toLowerCase() === marca);
+    const instalaciones = [...new Set(entradas.map(en => String(en.instalacionEspejo || '').trim()).filter(Boolean))];
+    if (instalaciones.length) {
+      estado = 'with';
+      texto = '🪞 Con espejo · ' + instalaciones.join(', ');
+      const productos = [...new Set(entradas.map(en => String(en.producto || '').trim()).filter(Boolean))];
+      if (productos.length) texto += ' · ' + productos.join(' / ');
+    } else if (entradas.length) {
+      texto = 'Espejo por confirmar · instalación no informada';
+    } else {
+      estado = 'none';
+      texto = 'Sin espejo en el archivo de este mes';
+    }
+  }
+  return `<div class="dc-espejo-status ${estado}" role="status">${_esc(texto)}</div>`;
 }
 
 function instToggleHTML(ch) {
