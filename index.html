@@ -902,7 +902,7 @@ html,body{min-height:100vh;background:var(--gt-tone-2,#080C14);}
 .dc-inst-toggle:hover { color:var(--white); border-color:var(--gt-tone-45,#4a5580); }
 .dc-inst-view { background:var(--gt-tone-8,#0e1520); border-radius:10px; border:1px solid var(--gt-tone-26,#1e2840); overflow:hidden; }
 .dc-inst-view-hdr, .dc-inst-view-row {
-  display:grid; grid-template-columns: 1.6fr 0.9fr 0.9fr 0.9fr 34px; align-items:center; gap:8px;
+  display:grid; grid-template-columns: 1.6fr 0.9fr 0.9fr 0.9fr; align-items:center; gap:8px;
 }
 .dc-inst-view-hdr {
   padding:9px 16px; font-size:9px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase;
@@ -2397,7 +2397,6 @@ function instViewHTML(d, canal, ch) {
         <div class="dc-inst-view-val">${oc10(inst.venta_10kg)}</div>
         <div class="dc-inst-view-val">${oc45(inst.venta_45kg)}</div>
         <div class="dc-inst-view-tot">${ocTot(inst.venta_10kg, inst.venta_45kg)}</div>
-        <button class="dc-inst-share" onclick="shareInstalacionWA('${d.id}','${canal}','${iid}')" title="Compartir por WhatsApp">📲</button>
       </div>
     </div>`;
   }).join('');
@@ -2409,7 +2408,7 @@ function instViewHTML(d, canal, ch) {
   return `<div class="dc-inst-view" style="display:none">
     ${espejoHTML}${espejoBtn}
     <div class="dc-inst-view-hdr">
-      <span>Instalación</span><span>10 Kg</span><span>45 Kg</span><span>Total</span><span></span>
+      <span>Instalación</span><span>10 Kg</span><span>45 Kg</span><span>Total</span>
     </div>
     ${rows}
   </div>`;
