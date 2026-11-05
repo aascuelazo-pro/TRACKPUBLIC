@@ -678,6 +678,9 @@ html,body{min-height:100vh;background:var(--gt-tone-2,#080C14);}
 #pnl-feb .dc-cmp-row:last-child { margin-bottom: 0; }
 #pnl-feb .dc-cmp-k { font-size: 10px; color: var(--muted); margin-bottom: 2px; white-space: nowrap; }
 #pnl-feb .dc-cmp-v { font-size: 16px; font-weight: 800; color: var(--white); font-variant-numeric: tabular-nums; }
+#pnl-feb .dc-cmp-pct { display:block; font-size:11px; margin-top:3px; font-weight:600; }
+#pnl-feb .dc-cmp-pct.pos { color:var(--green); }
+#pnl-feb .dc-cmp-pct.neg { color:var(--red); }
 #pnl-feb .dc-cmp-v.pos { color: var(--green); }
 #pnl-feb .dc-cmp-v.neg { color: var(--red); }
 #pnl-feb .dc-cmp-v.dash { color: var(--muted); font-weight: 500; }
@@ -2133,16 +2136,28 @@ function _cmpNum(v, conSigno) {
   return `<span class="dc-cmp-v ${cls}">${v > 0.004 ? '+' : ''}${txt}</span>`;
 }
 
+function _cmpPct(now, ref) {
+  if (now == null || ref == null || ref === 0) return '—';
+  const pct = (now - ref) / ref * 100;
+  const rounded = Number(pct.toFixed(1));
+  return (rounded > 0 ? '+' : '') + rounded.toFixed(1).replace('.', ',') + '%';
+}
+function _cmpDiffHTML(now, ref) {
+  const diff = ref == null ? null : now - ref;
+  const cls = diff > 0.004 ? 'pos' : diff < -0.004 ? 'neg' : '';
+  return _cmpNum(diff, true) + `<small class="dc-cmp-pct ${cls}">${_cmpPct(now, ref)}</small>`;
+}
+
 // Comparativo del distribuidor+canal "al día N": lo vendido del 1 al día N
 // de este mes vs. lo vendido hasta el día equivalente (misma proporción del
 // mes) del mes anterior (MA) y del mismo mes del año anterior (AA). Una
 // tarjeta por formato + total.
-function _distComparativoHTML(d, canal, ch) {
+function _distComparativoData(d, canal, ch) {
   const mkNow   = getMonthKey();
   const mkPrevM = _prevMonthKey(mkNow);
   const mkPrevY = _prevYearKeyOf(mkNow);
   const diaNow  = _diasTranscurridos(mkNow);
-  if (!diaNow) return '';
+  if (!diaNow) return null;
   const diaMA = _diaCorteRef(diaNow, mkNow, mkPrevM);
   const diaAA = _diaCorteRef(diaNow, mkNow, mkPrevY);
   const now = {'10kg': ch.venta_10kg, '45kg': ch.venta_45kg};
@@ -2158,9 +2173,18 @@ function _distComparativoHTML(d, canal, ch) {
     }
     return _cmpUnidad(obj[fmt], fmt);
   }
-  function card(fmt, titulo) {
-    const vN = val(now, fmt), vM = val(ma, fmt), vA = val(aa, fmt);
-    if (fmt !== 'total' && !(vN > 0) && !(vM > 0) && !(vA > 0)) return '';
+  const cards = [['10kg', '10 Kg'], ['45kg', '45 Kg'], ['total', 'Total']]
+    .filter(([fmt]) => canal === 'AB' || fmt !== '45kg')
+    .map(([fmt, titulo]) => ({fmt, titulo, vN: val(now, fmt), vM: val(ma, fmt), vA: val(aa, fmt)}))
+    .filter(c => c.fmt === 'total' || c.vN > 0 || c.vM > 0 || c.vA > 0);
+  const unidad = unitMode === 'T' ? 'TM' : 'cilindros';
+  return {diaNow, marca, cards, title: `Comparativo al día ${diaNow} de ${_daysInMonth(mkNow)} · ${_mesLabelShort(mkNow)} · en ${unidad}`};
+}
+function _distComparativoHTML(d, canal, ch) {
+  const cmp = _distComparativoData(d, canal, ch);
+  if (!cmp) return '';
+  const {diaNow, marca} = cmp;
+  function card({titulo, vN, vM, vA}) {
     return `<div class="dc-cmp-card">
       <div class="dc-cmp-prod">${titulo}</div>
       <div class="dc-cmp-marca">${marca}</div>
@@ -2171,15 +2195,14 @@ function _distComparativoHTML(d, canal, ch) {
       </div>
       <div class="dc-cmp-row">
         <div></div>
-        <div><div class="dc-cmp-k">Dif. vs MA</div>${_cmpNum(vM == null ? null : vN - vM, true)}</div>
-        <div><div class="dc-cmp-k">Dif. vs AA</div>${_cmpNum(vA == null ? null : vN - vA, true)}</div>
+        <div><div class="dc-cmp-k">Dif. vs MA</div>${_cmpDiffHTML(vN, vM)}</div>
+        <div><div class="dc-cmp-k">Dif. vs AA</div>${_cmpDiffHTML(vN, vA)}</div>
       </div>
     </div>`;
   }
-  const unidad = unitMode === 'T' ? 'TM' : 'cilindros';
   return `<div class="dc-cmp">
-    <div class="dc-cmp-title">📅 Comparativo al día ${diaNow} de ${_daysInMonth(mkNow)} · ${_mesLabelShort(mkNow)} · en ${unidad}</div>
-    <div class="dc-cmp-grid">${card('10kg','10 Kg')}${card('45kg','45 Kg')}${card('total','Total')}</div>
+    <div class="dc-cmp-title">📅 ${cmp.title}</div>
+    <div class="dc-cmp-grid">${cmp.cards.map(card).join('')}</div>
   </div>`;
 }
 
@@ -2649,6 +2672,19 @@ function _buildDistribuidorText(d) {
       lines.push(txt);
     });
   });
+  ['AB','AM'].forEach(canal => {
+    const ch = d.canales[canal];
+    if (!(ch.cuota_total > 0 || ch.venta_total > 0)) return;
+    const cmp = _distComparativoData(d, canal, ch);
+    if (!cmp) return;
+    lines.push('', cmp.marca + ' · ' + cmp.title);
+    const fmt = v => v == null ? '—' : v.toFixed(unitMode === 'T' ? 2 : 0);
+    cmp.cards.filter(c => c.fmt !== 'total').forEach(c => {
+      lines.push('  • ' + c.titulo + ': Día ' + cmp.diaNow + ': ' + fmt(c.vN) + ' · MA: ' + fmt(c.vM) + ' · AA: ' + fmt(c.vA));
+      const diff = ref => (ref == null ? '—' : (c.vN > ref ? '+' : '') + fmt(c.vN-ref)) + ' (' + _cmpPct(c.vN, ref) + ')';
+      lines.push('    Dif. vs MA: ' + diff(c.vM) + ' · Dif. vs AA: ' + diff(c.vA));
+    });
+  });
   const fecha = _ultimaFacturaDist(d.id);
   return '📊 Avance de Ventas — ' + currentMonthLabel() + '\n' +
     'Distribuidor: ' + d.nombre + '\n' +
@@ -2709,7 +2745,9 @@ function _buildDistribuidorCanvas(d) {
   const PAD  = 40;
   const canales = ['AB','AM'].filter(ch => d.canales[ch].cuota_total > 0 || d.canales[ch].venta_total > 0);
   const BH   = 250;   // height per canal block — extra room prevents overlap
-  const H    = 170 + canales.length * (BH + 20) + 70;  // 70px footer space
+  const comparativos = canales.map(c => _distComparativoData(d, c, d.canales[c]));
+  const cmpHeights = comparativos.map(c => c ? 36 + Math.ceil(c.cards.length / 2) * 188 : 0);
+  const H    = 170 + canales.length * (BH + 20) + cmpHeights.reduce((a,b) => a+b, 0) + 70;  // 70px footer space
 
   const cv   = document.createElement('canvas');
   cv.width   = W * DPR;
@@ -2816,7 +2854,7 @@ function _buildDistribuidorCanvas(d) {
   // CANAL BLOCKS
   let cy = 152;
 
-  canales.forEach(canal => {
+  canales.forEach((canal, index) => {
     const ch   = d.canales[canal];
     const isAB = canal === 'AB';
     const marca = isAB ? 'SOLGAS' : 'MASGAS';
@@ -2948,6 +2986,33 @@ function _buildDistribuidorCanvas(d) {
     txt('100%',      C3R-IP, MY+108, '500 10px Inter, sans-serif', _themeColor('#5A7AA0'), 'right');
 
     cy += BH + 20;
+    const cmp = comparativos[index];
+    if (cmp) {
+      txt(cmp.title, CX, cy + 14, '600 12px Inter, sans-serif', _themeColor('#7A9AC0'));
+      cmp.cards.forEach((c, i) => {
+        const x = CX + (i % 2) * (CW + 14) / 2;
+        const y = cy + 28 + Math.floor(i / 2) * 188;
+        const w = (CW - 14) / 2;
+        ctx.fillStyle = _themeColor('#0D1829');
+        rr(x, y, w, 174, 10); ctx.fill();
+        ctx.strokeStyle = _themeColor('#1E3060'); ctx.lineWidth = 1;
+        rr(x, y, w, 174, 10); ctx.stroke();
+        txt(c.titulo + ' · ' + cmp.marca, x+14, y+25, 'bold 16px Inter, sans-serif', _themeColor('#DDEEFF'));
+        const fmt = v => v == null ? '—' : v.toFixed(unitMode === 'T' ? 2 : 0);
+        [c.vN, c.vM, c.vA].forEach((v, j) => {
+          const xx = x + 14 + j * (w-28)/3;
+          txt(['Día ', 'MA día ', 'AA día '][j] + cmp.diaNow, xx, y+52, '500 11px Inter, sans-serif', _themeColor('#8AACCC'));
+          txt(fmt(v), xx, y+76, 'bold 19px Inter, sans-serif', _themeColor('#DDEEFF'));
+          if (!j) return;
+          const diff = v == null ? null : c.vN-v;
+          const color = _themeColor(diff == null ? '#8AACCC' : diff > 0.004 ? '#2ECC71' : diff < -0.004 ? '#E05252' : '#DDEEFF');
+          txt('Dif. vs ' + (j === 1 ? 'MA' : 'AA'), xx, y+104, '500 11px Inter, sans-serif', _themeColor('#8AACCC'));
+          txt((diff > 0.004 ? '+' : '') + fmt(diff), xx, y+128, 'bold 19px Inter, sans-serif', color);
+          txt(_cmpPct(c.vN, v), xx, y+150, '600 12px Inter, sans-serif', color);
+        });
+      });
+      cy += cmpHeights[index];
+    }
   });
 
   // ── Footer
