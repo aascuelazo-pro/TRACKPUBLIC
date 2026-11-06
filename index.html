@@ -3152,7 +3152,12 @@ function _buildDistribuidorCanvas(d) {
   }).filter(b => b.products.length);
   // Coordinates measured on the supplied 588 px wide reference, excluding the phone viewer.
   const W=588, DPR=3, light=document.documentElement.dataset.theme==='light';
-  const rowH=(p,compact)=>p.comparison?(compact?200:218):139;
+  const compareMonth=getMonthKey(),compareDay=_diasTranscurridos(compareMonth);
+  const partialCut=[_prevMonthKey(compareMonth),_prevYearKeyOf(compareMonth)].some(ref=>{
+    const day=_diaCorteRef(compareDay,compareMonth,ref);return day-Math.floor(day+1e-8)>0.00001;
+  });
+  const tileExtra=partialCut?16:0;
+  const rowH=(p,compact)=>p.comparison?(compact?200:218)+tileExtra:139;
   const H=94+blocks.reduce((n,b)=>n+(b.canal==='AB'?68:60)+b.products.reduce((k,p,i)=>k+rowH(p,i>0||b.products.length===1)+8,0)+2,0)-8;
   const cv=document.createElement('canvas');cv.width=W*DPR;cv.height=H*DPR;
   const ctx=cv.getContext('2d');ctx.scale(DPR,DPR);
@@ -3186,8 +3191,8 @@ function _buildDistribuidorCanvas(d) {
     ctx.save();ctx.beginPath();ctx.roundRect(17,y,554,70,20);ctx.clip();ctx.fillStyle=gradient(17,y,13,70,sol?['#FFE276','#F2A20B']:['#00C8F0','#0062FF']);ctx.fillRect(17,y,13,70);ctx.restore();
     text(sol?'SOLGAS':'MASGAS',47,y+49,41,900);
     line(sol?344:351,y+14,sol?344:351,y+55,accent,1.4);
-    text(b.ch.cuota_total>0?pct.toFixed(1).replace('.',',')+'%':'Sin cuota',460,y+40,39,900,state,'center',192);
-    text(b.ch.cuota_total<=0?'Sin cuota':pct>=100?'✓ Cuota cumplida':pct>=50?'En curso':'Por alcanzar',460,y+59,15,400,muted,'center',193);
+    text(b.ch.cuota_total>0?pct.toFixed(1).replace('.',',')+'%':'Sin cuota',460,y+(b.ch.cuota_total>0?40:43),b.ch.cuota_total>0?39:25,900,state,'center',192);
+    if(b.ch.cuota_total>0)text(pct>=100?'✓ Cuota cumplida':pct>=50?'En curso':'Por alcanzar',460,y+59,15,400,muted,'center',193);
     y+=sol?68:60;
     b.products.forEach((p,index)=>{
       const sale=_cmpUnidad(p.sale,p.fmt),quota=_cmpUnidad(p.quota,p.fmt),missing=Math.max(0,quota-sale),ok=p.quota>0&&p.sale>=p.quota-0.000001;
@@ -3200,8 +3205,8 @@ function _buildDistribuidorCanvas(d) {
       text(fmt(sale),left,y+96-(compact?14:0),68,900,ink,'center',264);
       text(tm?'toneladas compradas':'cilindros comprados',left,y+113-(compact?15:0),15,400,muted,'center',270);
       line(single?295:305,y+22,single?295:305,y+(compact?96:104),light?'#D0D4DF':'#354477',1.6);
-      quantity('Cuota',quota,right,y+55,ink);
-      if(p.quota<=0)text('Sin cuota asignada',right,y+87,20,700,muted,'left',240);
+      if(p.quota>0)quantity('Cuota',quota,right,y+55,ink);
+      if(p.quota<=0)text('Sin cuota asignada',right,y+65,20,700,muted,'left',240);
       else if(ok)text('✓ Meta alcanzada',right+14,y+85,22,800,green,'left',235);
       else quantity('Faltan',missing,right,y+91,red);
       rect(35,y+120-(compact?12:0),517,13,7,light?'#CFD9E5':'#2B407F');
@@ -3209,15 +3214,15 @@ function _buildDistribuidorCanvas(d) {
       if(ratio>0)rect(35,y+120-(compact?12:0),517*ratio,13,7,gradient(35,y+120-(compact?12:0),517,0,sol?['#FFBE32','#E69B06']:['#00ACEF','#0050FF']));
       if(p.comparison)[p.comparison.vM,p.comparison.vA].forEach((ref,i)=>{
         const x=i?298:29,w=i?261:261,c=x+w/2,date=dates[i];
-        rect(x,y+140-offset,w,72,9,light?gradient(x,y+140-offset,w,72,sol?['#FFF9EB','#F9F1DF']:['#EDF6FF','#E0EDFF']):'#0A1748');
+        rect(x,y+140-offset,w,72+tileExtra,9,light?gradient(x,y+140-offset,w,72+tileExtra,sol?['#FFF9EB','#F9F1DF']:['#EDF6FF','#E0EDFF']):'#0A1748');
         text((i?'Año anterior':'Mes anterior')+' · al '+date.date,c,y+158-offset,14,700,ink,'center',w-10);
         if(date.extra)text(date.extra,c,y+171-offset,9,400,muted,'center');
-        text(fmt(ref),c,y+185-offset,date.extra?23:26,900,ink,'center',w-12);
+        text(fmt(ref),c,y+185-offset+tileExtra,26,900,ink,'center',w-12);
         const diff=ref==null?null:sale-ref,col=diff==null?muted:diff>0.004?green:diff< -0.004?red:ink;
         const val=diff==null?'—':(diff>0.004?'+':'')+fmt(diff),pctText=ref===0?'Sin base porcentual':_cmpPct(sale,ref);
         const suffix=(ref===0?' | ':' · ')+pctText,suffixSize=ref===0?12:18;
         ctx.font='800 20px '+font;let dw=ctx.measureText(val).width;ctx.font=(ref===0?'400 ':'800 ')+suffixSize+'px '+font;const sw=ctx.measureText(suffix).width;
-        text(val,c-(dw+sw)/2,y+205-offset,20,800,col);text(suffix,c-(dw+sw)/2+dw,y+205-offset,suffixSize,ref===0?400:800,ref===0?muted:col);
+        text(val,c-(dw+sw)/2,y+205-offset+tileExtra,20,800,col);text(suffix,c-(dw+sw)/2+dw,y+205-offset+tileExtra,suffixSize,ref===0?400:800,ref===0?muted:col);
       });
       y+=h+8;
     });
