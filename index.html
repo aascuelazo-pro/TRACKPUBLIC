@@ -3050,7 +3050,7 @@ function _buildDistribuidorCanvas(d) {
     }).filter(p => p.sale > 0 || p.quota > 0 || (p.comparison && (p.comparison.vM > 0 || p.comparison.vA > 0)));
     return {canal:c, ch, cmp, products};
   }).filter(b => b.products.length);
-  const rowHeight = p => p.comparison ? 258 : 164;
+  const rowHeight = p => p.comparison ? 280 : 178;
   const H = 124 + blocks.reduce((sum,b) => sum + 80 + b.products.reduce((n,p) => n + rowHeight(p) + 12, 0) + 12, 0) + 12;
   const cv = document.createElement('canvas'); cv.width = W*DPR; cv.height = H*DPR;
   const ctx = cv.getContext('2d'); ctx.scale(DPR,DPR);
@@ -3074,7 +3074,10 @@ function _buildDistribuidorCanvas(d) {
   const color = value => cardColors[value] || value;
   const ink = color('#DDEEFF'), muted = color('#8AACCC'), green = color('#2ECC71'), red = color('#E05252');
   function box(x,y,w,h,r,fill,stroke) {
+    ctx.save();
+    if (fill === color('#111E35')) {ctx.shadowColor=cardLight?'rgba(15,30,60,0.16)':'rgba(0,0,0,0.12)';ctx.shadowBlur=8;ctx.shadowOffsetY=3;}
     ctx.beginPath(); ctx.roundRect(x,y,w,h,r); ctx.fillStyle=fill; ctx.fill();
+    ctx.restore();
     if (stroke) {ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}
   }
   function text(value,x,y,size=20,weight=600,fill=ink,align='left',maxWidth) {
@@ -3098,11 +3101,16 @@ function _buildDistribuidorCanvas(d) {
   const ma=cutoff(_prevMonthKey(mk),_diaCorteRef(dia,mk,_prevMonthKey(mk)));
   const aa=cutoff(_prevYearKeyOf(mk),_diaCorteRef(dia,mk,_prevYearKeyOf(mk)));
   ctx.fillStyle=color('#0B1120');ctx.fillRect(0,0,W,H);
+  function line(x1,y1,x2,y2,stroke,width=1) {
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle=stroke;ctx.lineWidth=width;ctx.stroke();
+  }
   const rangeLabel = dateMode === 'month' ? '' : ' · DÍAS '+dateFrom+'–'+dateTo;
-  text('GASTRACK · '+currentMonthLabel().toUpperCase()+rangeLabel,W/2,30,18,700,ink,'center',CW);
-  text(d.nombre,W/2,65,30,800,ink,'center',CW);
+  text('GASTRACK · '+(rangeLabel ? currentMonthLabel().toUpperCase() : new Intl.DateTimeFormat('es-PE',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(mk+'-01T00:00:00Z')).replace(' DE ',' ').replace(' de ',' ').toUpperCase())+rangeLabel,W/2,30,18,700,ink,'center',CW);
+  line(PAD+80,22,PAD+180,22,color('#F0B429'));
+  line(W-PAD-180,22,W-PAD-80,22,color('#F0B429'));
+  text(d.nombre,W/2,77,38,800,ink,'center',CW);
   const fecha=_ultimaFacturaDist(d.id) || 'sin facturas registradas';
-  text('Facturado al '+fecha+' · En '+(tm?'toneladas':'cilindros'),W/2,95,17,500,muted,'center',CW);
+  text('Facturado al '+fecha+' · En '+(tm?'toneladas':'cilindros'),W/2,104,19,500,muted,'center',CW);
   let y=124;
   blocks.forEach(b => {
     const accent=color(b.canal==='AB'?'#F0B429':'#4CA8E0');
@@ -3111,41 +3119,49 @@ function _buildDistribuidorCanvas(d) {
     const status=b.ch.cuota_total<=0?'Sin cuota':pct>=100?'✓ Cuota cumplida':pct>=50?'En curso':'Por alcanzar';
     const state=b.ch.cuota_total<=0?muted:pct>=100?green:pct>=50?accent:red;
     box(PAD,y,CW,70,18,tint);
-    text(b.canal==='AB'?'SOLGAS':'MASGAS',PAD+22,y+45,36,800,ink);
-    text(b.ch.cuota_total>0?pct.toFixed(1).replace('.',',')+'%':'Sin cuota',W-PAD-22,y+36,36,800,state,'right');
+    box(PAD,y,8,70,4,accent);
+    line(PAD+CW*0.60,y+13,PAD+CW*0.60,y+56,accent,1.5);
+    text(b.canal==='AB'?'SOLGAS':'MASGAS',PAD+28,y+49,48,800,ink);
+    text(b.ch.cuota_total>0?pct.toFixed(1).replace('.',',')+'%':'Sin cuota',W-PAD-22,y+40,48,800,state,'right');
     text(status,W-PAD-22,y+58,16,500,state,'right');
     y+=80;
     b.products.forEach(p => {
       const height=rowHeight(p), sale=_cmpUnidad(p.sale,p.fmt), quota=_cmpUnidad(p.quota,p.fmt);
       const missing=Math.max(0,quota-sale), achieved=p.quota>0 && p.sale>=p.quota-0.000001;
       box(PAD,y,CW,height,16,color('#111E35'),color('#1E3060'));
-      box(PAD+95,y+10,130,30,10,tint);
-      text(p.title,PAD+160,y+33,23,800,ink,'center');
-      text(fmt(sale),PAD+160,y+94,58,800,ink,'center',285);
-      text(tm?'toneladas compradas':'cilindros comprados',PAD+160,y+119,18,500,muted,'center');
-      quantity('Cuota',quota,PAD+CW/2+14,y+60,ink,32);
-      if(p.quota<=0) text('Sin cuota asignada',PAD+CW/2+14,y+101,23,500,muted);
-      else if(achieved) text('✓ Meta alcanzada',PAD+CW/2+14,y+101,25,700,green,'left',CW/2-35);
-      else quantity('Faltan',missing,PAD+CW/2+14,y+104,red,32);
-      box(PAD+22,y+138,CW-44,12,6,color('#2a3555'));
+      box(PAD+140,y+10,120,30,10,tint);
+      line(PAD+CW/2+12,y+26,PAD+CW/2+12,y+131,color('#1E3060'),2);
+      text(p.title,PAD+200,y+33,23,800,ink,'center');
+      text(fmt(sale),PAD+200,y+112,88,800,ink,'center',285);
+      text(tm?'toneladas compradas':'cilindros comprados',PAD+200,y+137,19,500,muted,'center');
+      quantity('Cuota',quota,PAD+CW/2+34,y+69,ink,42);
+      if(p.quota<=0) text('Sin cuota asignada',PAD+CW/2+34,y+112,23,500,muted);
+      else if(achieved) text('✓ Meta alcanzada',PAD+CW/2+34,y+112,29,700,green,'left',CW/2-35);
+      else quantity('Faltan',missing,PAD+CW/2+34,y+113,red,42);
+      box(PAD+22,y+155,CW-44,16,8,color('#2a3555'));
       const ratio=p.quota>0?Math.min(p.sale/p.quota,1):0;
-      if(ratio>0) box(PAD+22,y+138,(CW-44)*ratio,12,6,accent);
+      if(ratio>0) {
+        const gradient=ctx.createLinearGradient(PAD+22,0,W-PAD-22,0);
+        gradient.addColorStop(0,b.canal==='AB'?'#FFBE37':'#00A4F4');
+        gradient.addColorStop(1,accent);
+        box(PAD+22,y+155,(CW-44)*ratio,16,8,gradient);
+      }
       if(p.comparison) {
         const tileW=(CW-56)/2;
         [p.comparison.vM,p.comparison.vA].forEach((ref,i) => {
           const x=PAD+20+i*(tileW+16), center=x+tileW/2, date=i?aa:ma;
-          box(x,y+164,tileW,82,12,tint);
-          text((i?'Año anterior':'Mes anterior')+' · '+date.label,center,y+183,15,600,ink,'center',tileW-16);
-          if(date.detail) text(date.detail,center,y+197,11,400,muted,'center');
-          text(fmt(ref),center,y+218,27,800,ink,'center');
+          box(x,y+181,tileW,87,12,tint);
+          text((i?'Año anterior':'Mes anterior')+' · '+date.label,center,y+201,15,600,ink,'center',tileW-16);
+          if(date.detail) text(date.detail,center,y+215,11,400,muted,'center');
+          text(fmt(ref),center,y+237,date.detail ? 25 : 33,800,ink,'center');
           const diff=ref==null?null:sale-ref, diffColor=diff==null?muted:diff>0.004?green:diff< -0.004?red:ink;
           const diffText=diff==null?'—':(diff>0.004?'+':'')+fmt(diff);
           const percent=ref===0?'Sin base porcentual':_cmpPct(sale,ref);
-          ctx.font='700 20px Inter, sans-serif';const dw=ctx.measureText(diffText).width;
-          ctx.font='500 14px Inter, sans-serif';const pw=ctx.measureText(' · '+percent).width;
+          ctx.font='700 24px Inter, sans-serif';const dw=ctx.measureText(diffText).width;
+          ctx.font='500 17px Inter, sans-serif';const pw=ctx.measureText(' · '+percent).width;
           const left=center-(dw+pw)/2;
-          text(diffText,left,y+239,20,700,diffColor);
-          text(' · '+percent,left+dw,y+239,14,500,diffColor);
+          text(diffText,left,y+260,24,700,diffColor);
+          text(' · '+percent,left+dw,y+260,17,500,diffColor);
         });
       }
       y+=height+12;
