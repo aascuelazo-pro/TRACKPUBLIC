@@ -2672,19 +2672,6 @@ function _buildDistribuidorText(d) {
       lines.push(txt);
     });
   });
-  ['AB','AM'].forEach(canal => {
-    const ch = d.canales[canal];
-    if (!(ch.cuota_total > 0 || ch.venta_total > 0)) return;
-    const cmp = _distComparativoData(d, canal, ch);
-    if (!cmp) return;
-    lines.push('', cmp.marca + ' · ' + cmp.title);
-    const fmt = v => v == null ? '—' : v.toFixed(unitMode === 'T' ? 2 : 0);
-    cmp.cards.filter(c => c.fmt !== 'total').forEach(c => {
-      lines.push('  • ' + c.titulo + ': Día ' + cmp.diaNow + ': ' + fmt(c.vN) + ' · MA: ' + fmt(c.vM) + ' · AA: ' + fmt(c.vA));
-      const diff = ref => (ref == null ? '—' : (c.vN > ref ? '+' : '') + fmt(c.vN-ref)) + ' (' + _cmpPct(c.vN, ref) + ')';
-      lines.push('    Dif. vs MA: ' + diff(c.vM) + ' · Dif. vs AA: ' + diff(c.vA));
-    });
-  });
   const fecha = _ultimaFacturaDist(d.id);
   return '📊 Avance de Ventas — ' + currentMonthLabel() + '\n' +
     'Distribuidor: ' + d.nombre + '\n' +
