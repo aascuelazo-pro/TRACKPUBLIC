@@ -3054,8 +3054,16 @@ function _buildDistribuidorCanvas(d) {
   const H = 124 + blocks.reduce((sum,b) => sum + 80 + b.products.reduce((n,p) => n + rowHeight(p) + 12, 0) + 12, 0) + 12;
   const cv = document.createElement('canvas'); cv.width = W*DPR; cv.height = H*DPR;
   const ctx = cv.getContext('2d'); ctx.scale(DPR,DPR);
-  // Export uses a deep Solgas blue palette in either interface theme.
-  const cardColors = {
+  // Export palettes follow the approved dark/light card references independently of UI colors.
+  const cardLight = document.documentElement.dataset.theme === 'light';
+  const cardColors = cardLight ? {
+    '#0B1120':'#F4F7FD', '#111E35':'#FFFFFF',
+    '#1E1600':'#FFF7E5', '#001222':'#EAF3FF',
+    '#1E3060':'#DCE2EC', '#2a3555':'#D2DAE6',
+    '#DDEEFF':'#070F28', '#8AACCC':'#5E6572',
+    '#F0B429':'#F5AD16', '#4CA8E0':'#0755EF',
+    '#2ECC71':'#07851A', '#E05252':'#DF2020'
+  } : {
     '#0B1120':'#0D2064', '#111E35':'#0B194D',
     '#1E1600':'#0A1748', '#001222':'#0C1B50',
     '#1E3060':'#293D7A', '#2a3555':'#293D7A',
@@ -3079,7 +3087,7 @@ function _buildDistribuidorCanvas(d) {
     while(size>16) {ctx.font='700 '+size+'px Inter, sans-serif';if(ctx.measureText(value).width<=available) break;size--;}
     text(value,x,y,size,700,fill);
     ctx.font='700 '+size+'px Inter, sans-serif'; const width=ctx.measureText(value).width;
-    text(unit,x+width+8,y,Math.round(size*0.5),400,'#AEBAD6');
+    text(unit,x+width+8,y,Math.round(size*0.5),400,cardLight ? '#737985' : '#AEBAD6');
   }
   function cutoff(mk,day) {
     const whole=Math.floor(day+1e-8), fraction=day-whole;
