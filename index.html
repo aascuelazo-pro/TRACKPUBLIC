@@ -2727,291 +2727,103 @@ function _shareImagenYTexto(cv, fname, msg) {
 }
 
 function _buildDistribuidorCanvas(d) {
-  const DPR  = 2;
-  const W    = 800;
-  const PAD  = 40;
-  const canales = ['AB','AM'].filter(ch => d.canales[ch].cuota_total > 0 || d.canales[ch].venta_total > 0);
-  const BH   = 250;   // height per canal block — extra room prevents overlap
-  const comparativos = canales.map(c => {
-    const cmp = _distComparativoData(d, c, d.canales[c]);
-    return cmp ? {...cmp, cards: cmp.cards.filter(card => card.fmt !== 'total')} : null;
-  });
-  const cmpHeights = comparativos.map(c => c ? 36 + Math.ceil(c.cards.length / 2) * 188 : 0);
-  const H    = 170 + canales.length * (BH + 20) + cmpHeights.reduce((a,b) => a+b, 0) + 70;  // 70px footer space
-
-  const cv   = document.createElement('canvas');
-  cv.width   = W * DPR;
-  cv.height  = H * DPR;
-  const ctx  = cv.getContext('2d');
-  ctx.scale(DPR, DPR);
-
-  // ── Helpers
-  function rr(x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
-    ctx.arcTo(x+w,y,x+w,y+r,r); ctx.lineTo(x+w,y+h-r);
-    ctx.arcTo(x+w,y+h,x+w-r,y+h,r); ctx.lineTo(x+r,y+h);
-    ctx.arcTo(x,y+h,x,y+h-r,r); ctx.lineTo(x,y+r);
-    ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
+  const W = 800, PAD = 24, CW = W - PAD * 2, DPR = 2;
+  const tm = unitMode === 'T', unit = tm ? 'Tm' : 'CIL';
+  const fmt = v => v == null ? '—' : v.toFixed(tm ? 2 : 0).replace('.', ',');
+  const blocks = ['AB','AM'].filter(c => d.canales[c] && (d.canales[c].cuota_total > 0 || d.canales[c].venta_total > 0)).map(c => {
+    const ch = d.canales[c], cmp = _distComparativoData(d, c, ch);
+    const products = (c === 'AB' ? ['10kg','45kg'] : ['10kg']).map(f => {
+      const key = f === '10kg' ? '10' : '45';
+      return {fmt:f, title:key + ' KG', sale:ch['venta_'+key+'kg'] || 0, quota:ch['cuota_'+key+'kg'] || 0,
+        comparison:cmp && cmp.cards.find(card => card.fmt === f)};
+    }).filter(p => p.sale > 0 || p.quota > 0 || (p.comparison && (p.comparison.vM > 0 || p.comparison.vA > 0)));
+    return {canal:c, ch, cmp, products};
+  }).filter(b => b.products.length);
+  const rowHeight = p => p.comparison ? 258 : 164;
+  const H = 124 + blocks.reduce((sum,b) => sum + 80 + b.products.reduce((n,p) => n + rowHeight(p) + 12, 0) + 12, 0) + 12;
+  const cv = document.createElement('canvas'); cv.width = W*DPR; cv.height = H*DPR;
+  const ctx = cv.getContext('2d'); ctx.scale(DPR,DPR);
+  const color = _themeColor;
+  const ink = color('#DDEEFF'), muted = color('#8AACCC'), green = color('#2ECC71'), red = color('#E05252');
+  function box(x,y,w,h,r,fill,stroke) {
+    ctx.beginPath(); ctx.roundRect(x,y,w,h,r); ctx.fillStyle=fill; ctx.fill();
+    if (stroke) {ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke();}
   }
-  function txt(str, x, y, font, color, align) {
-    ctx.font = font; ctx.fillStyle = color;
-    ctx.textAlign = align || 'left'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText(String(str), x, y);
+  function text(value,x,y,size=20,weight=600,fill=ink,align='left',maxWidth) {
+    ctx.font=weight+' '+size+'px Inter, sans-serif';
+    if(maxWidth) while(ctx.measureText(String(value)).width>maxWidth && size>10) ctx.font=weight+' '+(--size)+'px Inter, sans-serif';
+    ctx.fillStyle=fill;ctx.textAlign=align;ctx.textBaseline='alphabetic';ctx.fillText(String(value),x,y);
   }
-  function bar(x, y, w, h, pct, c1, c2) {
-    ctx.fillStyle = _themeColor('#2a3555');
-    rr(x, y, w, h, h/2); ctx.fill();
-    const fw = Math.max(0, Math.min(pct, 1)) * w;
-    if (fw > 4) {
-      const gr = ctx.createLinearGradient(x, 0, x+fw, 0);
-      gr.addColorStop(0, c1); gr.addColorStop(1, c2);
-      ctx.fillStyle = gr;
-      rr(x, y, fw, h, h/2); ctx.fill();
-    }
+  function quantity(label,v,x,y,fill,size=30) {
+    const value=label+' '+fmt(v), available=W-PAD-x-50;
+    while(size>16) {ctx.font='700 '+size+'px Inter, sans-serif';if(ctx.measureText(value).width<=available) break;size--;}
+    text(value,x,y,size,700,fill);
+    ctx.font='700 '+size+'px Inter, sans-serif'; const width=ctx.measureText(value).width;
+    text(unit,x+width+8,y,Math.round(size*0.5),400,document.documentElement.dataset.theme === 'light' ? '#78818D' : '#A2ABB8');
   }
-  function pColor(p) {
-    if (p >= 100) return _themeColor('#2ECC71');
-    if (p >= 50)  return _themeColor('#E6A817');
-    return _themeColor('#E05252');
+  function cutoff(mk,day) {
+    const whole=Math.floor(day+1e-8), fraction=day-whole;
+    const date=String(whole).padStart(2,'0')+'/'+mk.slice(5,7)+'/'+mk.slice(0,4);
+    return {label:'al '+date, detail:fraction>0.00001 ? '+ '+Math.round(fraction*100)+'% del día '+(whole+1) : ''};
   }
-  function pLabel(p)  { return p >= 999 ? 'S/CUOTA' : p.toFixed(1) + '%'; }
-  function fmtT10(v) { if(v<=0) return '  —'; return unitMode==='T' ? v.toFixed(1)+' T' : Math.round(v*100)+' cil'; }
-  function fmtT45(v) { if(v<=0) return '  —'; return unitMode==='T' ? v.toFixed(1)+' T' : Math.round(v*1000/45)+' cil'; }
-  function fmtTmix(a,b) { if(a+b<=0) return '  —'; return unitMode==='T' ? (a+b).toFixed(1)+' T' : (Math.round(a*100)+Math.round(b*1000/45))+' cil'; }
-  function stLabel(p, hv) {
-    if (p >= 999 && hv) return 'SIN CUOTA';
-    if (p >= 100) return '✓  CUMPLIDO';
-    if (p >= 50)  return 'EN CURSO';
-    if (p > 0)    return 'POR ALCANZAR';
-    return 'SIN VENTA';
-  }
-  function stColors(p, hv) {
-    if (p >= 100 || (p >= 999 && hv)) return { bg:_themeColor('#1A4A30'), txt:_themeColor('#2ECC71'), border:_themeColor('#2ECC71') };
-    if (p >= 50)  return { bg:_themeColor('#4A3810'), txt:_themeColor('#E6A817'), border:_themeColor('#E6A817') };
-    return           { bg:_themeColor('#4A1A1A'), txt:_themeColor('#E05252'), border:_themeColor('#E05252') };
-  }
-
-  // ════════════════════════════════════
-  // BACKGROUND — deep navy
-  ctx.fillStyle = _themeColor('#0B1120');
-  ctx.fillRect(0, 0, W, H);
-
-  // Outer card
-  ctx.fillStyle = _themeColor('#111E35');
-  rr(14, 14, W-28, H-28, 16); ctx.fill();
-  ctx.strokeStyle = _themeColor('#2A3F6F'); ctx.lineWidth = 1.5;
-  rr(14, 14, W-28, H-28, 16); ctx.stroke();
-
-  // ── TOP accent bar (thin gradient stripe)
-  const gr0 = ctx.createLinearGradient(14, 0, W-14, 0);
-  gr0.addColorStop(0, _themeColor('#C8930A')); gr0.addColorStop(1, _themeColor('#1A7FC1'));
-  ctx.fillStyle = gr0;
-  rr(14, 14, W-28, 5, 16); ctx.fill();
-
-  // ── Header section
-  ctx.fillStyle = _themeColor('#0D1829');
-  ctx.fillRect(14, 19, W-28, 118);
-  ctx.strokeStyle = _themeColor('#1E3060'); ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(14, 137); ctx.lineTo(W-14, 137); ctx.stroke();
-
-  // Eyebrow label
-  const isFullMonth = dateMode === 'month' || (dateFrom === ALL_DAYS[0] && dateTo === ALL_DAYS[ALL_DAYS.length-1]);
-  const periodoLabel = isFullMonth
-    ? `AVANCE DE VENTAS  ·  ${currentMonthLabel().toUpperCase()}  ·  MES COMPLETO`
-    : `AVANCE DE VENTAS  ·  ${currentMonthLabel().toUpperCase()}  ·  DEL DÍA ${dateFrom} AL DÍA ${dateTo}`;
-  txt(periodoLabel, PAD, 50, '600 12px Inter, sans-serif', _themeColor('#7A9AC0'));
-
-  // Distributor name — large, white, bold
-  ctx.font = 'bold 30px Inter, sans-serif';
-  ctx.fillStyle = _themeColor('#FFFFFF');
-  ctx.textAlign = 'left';
-  // Truncate if too long
-  let nombre = d.nombre;
-  while (ctx.measureText(nombre).width > W - PAD*2 - 10 && nombre.length > 5) {
-    nombre = nombre.slice(0, -1);
-  }
-  if (nombre !== d.nombre) nombre += '…';
-  ctx.fillText(nombre, PAD, 92);
-
-  txt('Código: ' + d.id, PAD, 118, '500 13px Inter, sans-serif', _themeColor('#5A7AA0'));
-
-  // Generation date — top right
-  const now = new Date().toLocaleDateString('es-PE',{day:'2-digit',month:'long',year:'numeric'});
-  txt(now, W-PAD, 118, '500 12px Inter, sans-serif', _themeColor('#5A7AA0'), 'right');
-
-  // ════════════════════════════════════
-  // CANAL BLOCKS
-  let cy = 152;
-
-  canales.forEach((canal, index) => {
-    const ch   = d.canales[canal];
-    const isAB = canal === 'AB';
-    const marca = isAB ? 'SOLGAS' : 'MASGAS';
-
-    // Color palette — high contrast, readable
-    const acMain  = isAB ? _themeColor('#C8930A') : _themeColor('#1A7FC1');   // warm gold / strong blue
-    const acLight = isAB ? _themeColor('#F0B429') : _themeColor('#4CA8E0');   // lighter shade for values
-    const acBg    = isAB ? _themeColor('#1E1600') : _themeColor('#001222');   // very dark tint for bg
-
-    const pc  = pColor(ch.avance_pct);
-    const bw  = ch.cuota_total > 0 ? Math.min(ch.avance_pct / 100, 1) : (ch.venta_total > 0 ? 1 : 0);
-    const bc1 = pc === _themeColor('#2ECC71') ? _themeColor('#27AE60') : acMain;
-    const bc2 = pc === _themeColor('#2ECC71') ? _themeColor('#2ECC71') : acLight;
-    const sc  = stColors(ch.avance_pct, ch.venta_total > 0);
-
-    const CX  = PAD;
-    const CW  = W - PAD * 2;
-    const HDR = 52;
-
-    // Card bg
-    ctx.fillStyle = _themeColor('#0D1829');
-    rr(CX, cy, CW, BH, 12); ctx.fill();
-    ctx.strokeStyle = _themeColor('#1E3060'); ctx.lineWidth = 1.5;
-    rr(CX, cy, CW, BH, 12); ctx.stroke();
-
-    // Left accent bar per canal
-    ctx.fillStyle = acMain;
-    rr(CX, cy, 5, BH, 12); ctx.fill();
-    ctx.fillRect(CX+5, cy, 0, BH); // flush
-
-    // Header band
-    ctx.fillStyle = acBg;
-    ctx.fillRect(CX+5, cy, CW-5, HDR);
-    ctx.strokeStyle = _themeColor('#1E3060'); ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(CX, cy+HDR); ctx.lineTo(CX+CW, cy+HDR); ctx.stroke();
-
-    // Canal pill
-    ctx.fillStyle = acMain + '33';
-    rr(CX+18, cy+12, 56, 27, 6); ctx.fill();
-    ctx.strokeStyle = acMain; ctx.lineWidth = 1.5;
-    rr(CX+18, cy+12, 56, 27, 6); ctx.stroke();
-    txt(canal, CX+46, cy+31, 'bold 13px Inter, sans-serif', acMain, 'center');
-
-    // Marca
-    txt(marca, CX+86, cy+31, 'bold 17px Inter, sans-serif', _themeColor('#DDEEFF'));
-
-    // Status badge
-    ctx.fillStyle = sc.bg;
-    rr(CX+200, cy+13, 110, 26, 5); ctx.fill();
-    ctx.strokeStyle = sc.border; ctx.lineWidth = 1;
-    rr(CX+200, cy+13, 110, 26, 5); ctx.stroke();
-    txt(stLabel(ch.avance_pct, ch.venta_total>0), CX+255, cy+31, 'bold 10px Inter, sans-serif', sc.txt, 'center');
-
-    // Avance % large — header right
-    const pctStr = pLabel(ch.avance_pct);
-    txt(pctStr, CX+CW-16, cy+37, 'bold 32px Inter, sans-serif', pc, 'right');
-
-    // ════ 4 metric columns: CUOTA | VENTA | FALTANTE | AVANCE
-    const MY  = cy + HDR + 12;
-    const COL = CW / 4;
-    const IP  = 14;
-
-    // Col boundaries (4 equal columns)
-    const C0L = CX + 6,         C0R = CX + COL - 3;
-    const C1L = CX + COL + 3,   C1R = CX + COL*2 - 3;
-    const C2L = CX + COL*2 + 3, C2R = CX + COL*3 - 3;
-    const C3L = CX + COL*3 + 3, C3R = CX + CW - 4;
-
-    // Column dividers
-    ctx.strokeStyle = _themeColor('#1E3060'); ctx.lineWidth = 1;
-    [COL, COL*2, COL*3].forEach(off => {
-      ctx.beginPath(); ctx.moveTo(CX+off, cy+HDR+6); ctx.lineTo(CX+off, cy+BH-14); ctx.stroke();
-    });
-
-    // ── COL 0: CUOTA
-    txt('CUOTA', C0L+IP, MY+18, 'bold 12px Inter, sans-serif', _themeColor('#A8C8E8'));
-    txt('10 Kg', C0L+IP, MY+44, '500 13px Inter, sans-serif', _themeColor('#8AACCC'));
-    txt(fmtT10(ch.cuota_10kg), C0R-IP, MY+44, '600 13px Inter, sans-serif', _themeColor('#A8C4E0'), 'right');
-    txt('45 Kg', C0L+IP, MY+66, '500 13px Inter, sans-serif', _themeColor('#8AACCC'));
-    txt(fmtT45(ch.cuota_45kg), C0R-IP, MY+66, '600 13px Inter, sans-serif', _themeColor('#A8C4E0'), 'right');
-    ctx.strokeStyle=_themeColor('#1E3060'); ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(C0L+IP, MY+78); ctx.lineTo(C0R-IP, MY+78); ctx.stroke();
-    txt('Total', C0L+IP, MY+98, 'bold 13px Inter, sans-serif', _themeColor('#C8D8F0'));
-    txt(fmtTmix(ch.cuota_10kg,ch.cuota_45kg), C0R-IP, MY+98, 'bold 16px Inter, sans-serif', _themeColor('#C8D8F0'), 'right');
-
-    // ── COL 1: VENTA
-    txt('VENTA ' + currentMonthLabel().toUpperCase(), C1L+IP, MY+18, 'bold 12px Inter, sans-serif', _themeColor('#C8DCF0'));
-    txt('10 Kg', C1L+IP, MY+44, '500 13px Inter, sans-serif', _themeColor('#8AACCC'));
-    txt(fmtT10(ch.venta_10kg), C1R-IP, MY+44, '700 13px Inter, sans-serif', acLight, 'right');
-    txt('45 Kg', C1L+IP, MY+66, '500 13px Inter, sans-serif', _themeColor('#8AACCC'));
-    txt(fmtT45(ch.venta_45kg), C1R-IP, MY+66, '700 13px Inter, sans-serif', acLight, 'right');
-    ctx.strokeStyle=_themeColor('#1E3060'); ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(C1L+IP, MY+78); ctx.lineTo(C1R-IP, MY+78); ctx.stroke();
-    txt('Total', C1L+IP, MY+98, 'bold 13px Inter, sans-serif', acLight);
-    txt(fmtTmix(ch.venta_10kg,ch.venta_45kg), C1R-IP, MY+98, 'bold 17px Inter, sans-serif', acLight, 'right');
-
-    // ── COL 2: FALTANTE — purple tones
-    const f10  = Math.max(0, ch.cuota_10kg  - ch.venta_10kg);
-    const f45  = Math.max(0, ch.cuota_45kg  - ch.venta_45kg);
-    const fTot = Math.max(0, ch.cuota_total - ch.venta_total);
-    txt('FALTANTE', C2L+IP, MY+18, 'bold 12px Inter, sans-serif', _themeColor('#C39BD3'));
-    txt('10 Kg', C2L+IP, MY+44, '500 13px Inter, sans-serif', _themeColor('#A569BD'));
-    txt(f10 > 0.001 ? fmtT10(f10) : '✓', C2R-IP, MY+44, '600 13px Inter, sans-serif', f10 > 0.001 ? _themeColor('#C39BD3') : _themeColor('#27AE60'), 'right');
-    txt('45 Kg', C2L+IP, MY+66, '500 13px Inter, sans-serif', _themeColor('#A569BD'));
-    txt(f45 > 0.001 ? fmtT45(f45) : '✓', C2R-IP, MY+66, '600 13px Inter, sans-serif', f45 > 0.001 ? _themeColor('#C39BD3') : _themeColor('#27AE60'), 'right');
-    ctx.strokeStyle=_themeColor('#3A1F4A'); ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(C2L+IP, MY+78); ctx.lineTo(C2R-IP, MY+78); ctx.stroke();
-    txt('Total', C2L+IP, MY+98, 'bold 13px Inter, sans-serif', _themeColor('#D7BDE2'));
-    const fTotStr = fTot > 0.001 ? fmtTmix(f10,f45) : '✓ Meta';
-    txt(fTotStr, C2R-IP, MY+98, 'bold 16px Inter, sans-serif', fTot > 0.001 ? _themeColor('#D7BDE2') : _themeColor('#27AE60'), 'right');
-
-    // ── COL 3: AVANCE
-    const avCx = (C3L + C3R) / 2;
-    const avW  = C3R - C3L - IP*2;
-
-    txt('AVANCE', C3L+IP, MY+18, 'bold 12px Inter, sans-serif', _themeColor('#A8C8E8'));
-
-    ctx.font = 'bold 38px Inter, sans-serif';
-    ctx.fillStyle = pc;
-    ctx.textAlign = 'center';
-    const pctW = ctx.measureText(pctStr).width;
-    const pctFont = pctW > avW ? `bold ${Math.floor(38 * avW / pctW)}px Inter, sans-serif` : 'bold 38px Inter, sans-serif';
-    ctx.font = pctFont;
-    ctx.fillText(pctStr, avCx, MY+76);
-    ctx.textAlign = 'left';
-
-    bar(C3L+IP, MY+88, avW, 11, bw, bc1, bc2);
-    txt('0%',        C3L+IP, MY+108, '500 10px Inter, sans-serif', _themeColor('#5A7AA0'));
-    txt('100%',      C3R-IP, MY+108, '500 10px Inter, sans-serif', _themeColor('#5A7AA0'), 'right');
-
-    cy += BH + 20;
-    const cmp = comparativos[index];
-    if (cmp) {
-      txt(cmp.title, CX, cy + 14, '600 12px Inter, sans-serif', _themeColor('#7A9AC0'));
-      cmp.cards.forEach((c, i) => {
-        const x = CX + (i % 2) * (CW + 14) / 2;
-        const y = cy + 28 + Math.floor(i / 2) * 188;
-        const w = (CW - 14) / 2;
-        ctx.fillStyle = _themeColor('#0D1829');
-        rr(x, y, w, 174, 10); ctx.fill();
-        ctx.strokeStyle = _themeColor('#1E3060'); ctx.lineWidth = 1;
-        rr(x, y, w, 174, 10); ctx.stroke();
-        txt(c.titulo + ' · ' + cmp.marca, x+14, y+25, 'bold 16px Inter, sans-serif', _themeColor('#DDEEFF'));
-        const fmt = v => v == null ? '—' : v.toFixed(unitMode === 'T' ? 2 : 0);
-        [c.vN, c.vM, c.vA].forEach((v, j) => {
-          const xx = x + 14 + j * (w-28)/3;
-          txt(['Día ', 'MA día ', 'AA día '][j] + cmp.diaNow, xx, y+52, '500 11px Inter, sans-serif', _themeColor('#8AACCC'));
-          txt(fmt(v), xx, y+76, 'bold 19px Inter, sans-serif', _themeColor('#DDEEFF'));
-          if (!j) return;
-          const diff = v == null ? null : c.vN-v;
-          const color = _themeColor(diff == null ? '#8AACCC' : diff > 0.004 ? '#2ECC71' : diff < -0.004 ? '#E05252' : '#DDEEFF');
-          txt('Dif. vs ' + (j === 1 ? 'MA' : 'AA'), xx, y+104, '500 11px Inter, sans-serif', _themeColor('#8AACCC'));
-          txt((diff > 0.004 ? '+' : '') + fmt(diff), xx, y+128, 'bold 19px Inter, sans-serif', color);
-          txt(_cmpPct(c.vN, v), xx, y+150, '600 12px Inter, sans-serif', color);
+  const mk=getMonthKey(), dia=_diasTranscurridos(mk);
+  const ma=cutoff(_prevMonthKey(mk),_diaCorteRef(dia,mk,_prevMonthKey(mk)));
+  const aa=cutoff(_prevYearKeyOf(mk),_diaCorteRef(dia,mk,_prevYearKeyOf(mk)));
+  ctx.fillStyle=color('#0B1120');ctx.fillRect(0,0,W,H);
+  const rangeLabel = dateMode === 'month' ? '' : ' · DÍAS '+dateFrom+'–'+dateTo;
+  text('GASTRACK · '+currentMonthLabel().toUpperCase()+rangeLabel,W/2,30,18,700,ink,'center',CW);
+  text(d.nombre,W/2,65,30,800,ink,'center',CW);
+  const fecha=_ultimaFacturaDist(d.id) || 'sin facturas registradas';
+  text('Facturado al '+fecha+' · En '+(tm?'toneladas':'cilindros'),W/2,95,17,500,muted,'center',CW);
+  let y=124;
+  blocks.forEach(b => {
+    const accent=color(b.canal==='AB'?'#F0B429':'#4CA8E0');
+    const tint=color(b.canal==='AB'?'#1E1600':'#001222');
+    const pct=b.ch.avance_pct;
+    const status=b.ch.cuota_total<=0?'Sin cuota':pct>=100?'✓ Cuota cumplida':pct>=50?'En curso':'Por alcanzar';
+    const state=b.ch.cuota_total<=0?muted:pct>=100?green:pct>=50?accent:red;
+    box(PAD,y,CW,70,18,tint);
+    text(b.canal==='AB'?'SOLGAS':'MASGAS',PAD+22,y+45,36,800,ink);
+    text(b.ch.cuota_total>0?pct.toFixed(1).replace('.',',')+'%':'Sin cuota',W-PAD-22,y+36,36,800,state,'right');
+    text(status,W-PAD-22,y+58,16,500,state,'right');
+    y+=80;
+    b.products.forEach(p => {
+      const height=rowHeight(p), sale=_cmpUnidad(p.sale,p.fmt), quota=_cmpUnidad(p.quota,p.fmt);
+      const missing=Math.max(0,quota-sale), achieved=p.quota>0 && p.sale>=p.quota-0.000001;
+      box(PAD,y,CW,height,16,color('#111E35'),color('#1E3060'));
+      box(PAD+95,y+10,130,30,10,tint);
+      text(p.title,PAD+160,y+33,23,800,ink,'center');
+      text(fmt(sale),PAD+160,y+94,58,800,ink,'center',285);
+      text(tm?'toneladas compradas':'cilindros comprados',PAD+160,y+119,18,500,muted,'center');
+      quantity('Cuota',quota,PAD+CW/2+14,y+60,ink,32);
+      if(p.quota<=0) text('Sin cuota asignada',PAD+CW/2+14,y+101,23,500,muted);
+      else if(achieved) text('✓ Meta alcanzada',PAD+CW/2+14,y+101,25,700,green,'left',CW/2-35);
+      else quantity('Faltan',missing,PAD+CW/2+14,y+104,red,32);
+      box(PAD+22,y+138,CW-44,12,6,color('#2a3555'));
+      const ratio=p.quota>0?Math.min(p.sale/p.quota,1):0;
+      if(ratio>0) box(PAD+22,y+138,(CW-44)*ratio,12,6,accent);
+      if(p.comparison) {
+        const tileW=(CW-56)/2;
+        [p.comparison.vM,p.comparison.vA].forEach((ref,i) => {
+          const x=PAD+20+i*(tileW+16), center=x+tileW/2, date=i?aa:ma;
+          box(x,y+164,tileW,82,12,tint);
+          text((i?'Año anterior':'Mes anterior')+' · '+date.label,center,y+183,15,600,ink,'center',tileW-16);
+          if(date.detail) text(date.detail,center,y+197,11,400,muted,'center');
+          text(fmt(ref),center,y+218,27,800,ink,'center');
+          const diff=ref==null?null:sale-ref, diffColor=diff==null?muted:diff>0.004?green:diff< -0.004?red:ink;
+          const diffText=diff==null?'—':(diff>0.004?'+':'')+fmt(diff);
+          const percent=ref===0?'Sin base porcentual':_cmpPct(sale,ref);
+          ctx.font='700 20px Inter, sans-serif';const dw=ctx.measureText(diffText).width;
+          ctx.font='500 14px Inter, sans-serif';const pw=ctx.measureText(' · '+percent).width;
+          const left=center-(dw+pw)/2;
+          text(diffText,left,y+239,20,700,diffColor);
+          text(' · '+percent,left+dw,y+239,14,500,diffColor);
         });
-      });
-      cy += cmpHeights[index];
-    }
+      }
+      y+=height+12;
+    });
+    y+=12;
   });
-
-  // ── Footer
-  ctx.strokeStyle = _themeColor('#1E3060'); ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(14+PAD, H-38); ctx.lineTo(W-14-PAD, H-38); ctx.stroke();
-  txt('Cuota: Archivo Cuotas ' + currentMonthLabel() + '  ·  Venta: Facturación real ' + currentMonthLabel() + '  ·  Volúmenes en ' + (unitMode==='T' ? 'Toneladas' : 'Cilindros'),
-      PAD+14, H-16, '400 11px Inter, sans-serif', _themeColor('#4A6A90'));
-  txt('Generado: ' + now, W-PAD-14, H-16, '500 11px Inter, sans-serif', _themeColor('#4A6A90'), 'right');
-
   return cv;
 }
 
