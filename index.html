@@ -3054,7 +3054,16 @@ function _buildDistribuidorCanvas(d) {
   const H = 124 + blocks.reduce((sum,b) => sum + 80 + b.products.reduce((n,p) => n + rowHeight(p) + 12, 0) + 12, 0) + 12;
   const cv = document.createElement('canvas'); cv.width = W*DPR; cv.height = H*DPR;
   const ctx = cv.getContext('2d'); ctx.scale(DPR,DPR);
-  const color = _themeColor;
+  // Export uses a deep Solgas blue palette in either interface theme.
+  const cardColors = {
+    '#0B1120':'#102060', '#111E35':'#0B194D',
+    '#1E1600':'#0A1748', '#001222':'#0C1B50',
+    '#1E3060':'#293D7A', '#2a3555':'#293D7A',
+    '#DDEEFF':'#FFFFFF', '#8AACCC':'#BCC9E7',
+    '#F0B429':'#FFB547', '#4CA8E0':'#72AEF5',
+    '#2ECC71':'#4BDD91', '#E05252':'#FF8585'
+  };
+  const color = value => cardColors[value] || value;
   const ink = color('#DDEEFF'), muted = color('#8AACCC'), green = color('#2ECC71'), red = color('#E05252');
   function box(x,y,w,h,r,fill,stroke) {
     ctx.beginPath(); ctx.roundRect(x,y,w,h,r); ctx.fillStyle=fill; ctx.fill();
@@ -3070,7 +3079,7 @@ function _buildDistribuidorCanvas(d) {
     while(size>16) {ctx.font='700 '+size+'px Inter, sans-serif';if(ctx.measureText(value).width<=available) break;size--;}
     text(value,x,y,size,700,fill);
     ctx.font='700 '+size+'px Inter, sans-serif'; const width=ctx.measureText(value).width;
-    text(unit,x+width+8,y,Math.round(size*0.5),400,document.documentElement.dataset.theme === 'light' ? '#78818D' : '#A2ABB8');
+    text(unit,x+width+8,y,Math.round(size*0.5),400,'#AEBAD6');
   }
   function cutoff(mk,day) {
     const whole=Math.floor(day+1e-8), fraction=day-whole;
