@@ -2745,7 +2745,10 @@ function _buildDistribuidorCanvas(d) {
   const PAD  = 40;
   const canales = ['AB','AM'].filter(ch => d.canales[ch].cuota_total > 0 || d.canales[ch].venta_total > 0);
   const BH   = 250;   // height per canal block — extra room prevents overlap
-  const comparativos = canales.map(c => _distComparativoData(d, c, d.canales[c]));
+  const comparativos = canales.map(c => {
+    const cmp = _distComparativoData(d, c, d.canales[c]);
+    return cmp ? {...cmp, cards: cmp.cards.filter(card => card.fmt !== 'total')} : null;
+  });
   const cmpHeights = comparativos.map(c => c ? 36 + Math.ceil(c.cards.length / 2) * 188 : 0);
   const H    = 170 + canales.length * (BH + 20) + cmpHeights.reduce((a,b) => a+b, 0) + 70;  // 70px footer space
 
