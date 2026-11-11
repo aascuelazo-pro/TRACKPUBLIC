@@ -1036,6 +1036,7 @@ html,body{min-height:100vh;background:var(--gt-tone-2,#080C14);}
 .upload-status.ok      { background:var(--gt-tone-135,rgba(34,217,122,0.15)); color:var(--green); }
 .upload-status.err     { background:var(--gt-tone-125,rgba(255,85,102,0.15));  color:var(--red); }
 .upload-status.loading { color:var(--mid); }
+.upload-status.warn { color:var(--orange); }
 
 /* ══ EXTRAS ═════════════════════════════════════════════════════ */
 #pnl-feb .tbl tr.row-total td {
@@ -3199,6 +3200,11 @@ function _buildDistribuidorCanvas(d) {
       rect(29,y+5,90,24,7,light?gradient(29,y+5,90,24,sol?['#FFF2CF','#F7CF7B']:['#E8F5FF','#88C7FA']):'#0B1747');
       if(!light){ctx.beginPath();ctx.roundRect(29,y+5,90,24,7);ctx.strokeStyle=sol?'#F3A90E':'#368BFF';ctx.lineWidth=1.3;ctx.stroke();}
       text(p.title,74,y+25,20,900,ink,'center');
+      if(sol){
+        const reach=p.quota>0?p.sale/p.quota*100:null;
+        const reachColor=reach==null?muted:reach>=100?green:(light?'#A96900':'#FFBC40');
+        text('Alcance '+(reach==null?'—':reach.toFixed(1).replace('.',',')+'%'),551,y+24,16,800,reachColor,'right',230);
+      }
       text(fmt(sale),left,y+(tm?91:96)-(compact?14:0),tm?62:68,900,ink,'center',264);
       text(tm?'toneladas compradas':'cilindros comprados',left,y+113-(compact?15:0),tm?12:15,400,muted,'center',270);
       line(single?295:305,y+22,single?295:305,y+(compact?96:104),light?'#D0D4DF':'#354477',1.6);
@@ -4135,60 +4141,155 @@ function _parseCuotas(wb, mesKey) {
 // distintas exportaciones del mismo reporte traen distinto número de columnas
 // en blanco al inicio, lo que corría todas las posiciones fijas y hacía leer
 // "Titular" donde se esperaba "Zona" (bug real detectado con Andre 2026-09-12).
-function _parseEspejos(wb) {
-  var ws   = wb.Sheets[wb.SheetNames[0]];
-  var rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:null});
-
-  var headerRow=-1, colZona=-1, colMarca=-1, colTitular=-1, colNombre=-1,
-      colInst=-1, colDescuento=-1, colProducto=-1, colVentaBase=-1;
-  for (var h = 0; h < Math.min(rows.length, 15); h++) {
-    var r = rows[h]; if (!r) continue;
-    for (var c = 0; c < r.length; c++) {
-      var v = String(r[c]||'').toLowerCase().trim();
-      if (v.indexOf('zona') !== -1)                                 { colZona=c; headerRow=h; }
-      if (v === 'marca')                                            { colMarca=c; headerRow=h; }
-      if (v === 'titular')                                          { colTitular=c; headerRow=h; }
-      if (v.indexOf('nombre') !== -1 && v.indexOf('titular') !== -1) colNombre=c;
-      if (v.indexOf('nro instalacion')!==-1 || v.indexOf('nro instalación')!==-1 || v.indexOf('instalacion')!==-1 || v.indexOf('instalación')!==-1) { colInst=c; headerRow=h; }
-      if (v.indexOf('descuento') !== -1)                            colDescuento=c;
-      if (v === 'producto')                                         colProducto=c;
-      if (v.indexOf('venta base') !== -1)                           colVentaBase=c;
+function _espejoNorm(value) {
+  return String(value == null ? '' : value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+function _espejoNumber(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  var s = String(value == null ? '' : value).trim();
+  if (!/^-?\d+(?:[.,]\d+)?$/.test(s)) return null;
+  var n = Number(s.replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+// Un encabezado completo en una misma fila evita interpretar tablas de revisión.
+function _espejoCandidates(wb, mk) {
+  var months = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','setiembre','octubre','noviembre','diciembre'];
+  var month = Number(mk.slice(5)), candidates = [], problems = [];
+  wb.SheetNames.forEach(function(name) {
+    var rows = XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, defval:null, blankrows:true, range:0});
+    for (var h=0; h<rows.length; h++) {
+      var cols = {}, bases = [];
+      (rows[h] || []).forEach(function(value, c) {
+        var v = _espejoNorm(value).replace(/\.$/, '');
+        var aliases = {zona:['zona prima','zona','zp'], titular:['titular'], marca:['marca'],
+          nombre:['nombre titular'], instalacion:['nro instalacion','numero instalacion','nro de instalacion','numero de instalacion'],
+          producto:['producto'], descuento:['descuento'], activo:['activo']};
+        Object.keys(aliases).forEach(function(key) {
+          if (aliases[key].indexOf(v)>=0) {
+            if (cols[key] != null) cols[key] = -1; else cols[key] = c;
+          }
+        });
+        if (/^venta base(?:\s|$)/.test(v)) bases.push({c:c, text:v});
+      });
+      if (!['zona','titular','marca','instalacion','producto'].every(function(k){return cols[k]!=null && cols[k]>=0;}) || !bases.length) continue;
+      var selected = bases.filter(function(b) {
+        var tokens = b.text.split(/[^a-z0-9]+/);
+        var found = months.map(function(m,i){return tokens.indexOf(m)>=0 || (i===8 && tokens.indexOf('septiembre')>=0) || (i===10 && tokens.indexOf('noviembe')>=0);});
+        var year = b.text.match(/\b20\d{2}\b/);
+        return found[month-1] && found.filter(Boolean).length===1 && (!year || year[0]===mk.slice(0,4));
+      });
+      if (!selected.length && bases.length===1 && /^venta base(?: tm)?$/.test(bases[0].text)) selected=bases;
+      if (selected.length!==1) {
+        problems.push(name + ': falta una columna inequívoca de Venta Base para ' + mk);
+        continue;
+      }
+      cols.base=selected[0].c;
+      candidates.push({sheetName:name, rows:rows, headerRow:h, columnas:cols});
+      break;
     }
-    if (colTitular>=0 && colInst>=0) break;
-  }
-  // Info de diagnóstico: qué encabezado se detectó y qué columna se asignó a
-  // cada campo. Se guarda en window para poder inspeccionarlo desde la
-  // consola con window.__ESPEJO_DEBUG__ si algo no calza.
-  window._ultimoEspejoParseDebug = {
-    headerRow: headerRow,
-    headerRowTexto: headerRow>=0 ? rows[headerRow] : null,
-    columnas: {zona:colZona, marca:colMarca, titular:colTitular, nombreTitular:colNombre,
-      instalacionEspejo:colInst, descuento:colDescuento, producto:colProducto, ventaBase:colVentaBase}
-  };
-  if (headerRow===-1 || colTitular<0) return {zonas:{}};
-
-  var zonas = {}; // zona -> titularId -> [ {marca, producto, descuento, ventaBase, instalacionEspejo, nombreTitular} ]
-  for (var i = headerRow+1; i < rows.length; i++) {
-    var r = rows[i]; if (!r) continue;
-    var zona    = colZona>=0 && r[colZona]!=null ? String(r[colZona]).trim() : null;
-    var titular = r[colTitular]!=null ? String(r[colTitular]).trim() : null;
-    if (!zona || !titular) continue;
-    var marca     = colMarca>=0 && r[colMarca]!=null ? String(r[colMarca]).trim() : '';
-    var instEsp   = colInst>=0 && r[colInst]!=null ? String(r[colInst]).trim() : null;
-    var descuento = colDescuento>=0 ? parseFloat(r[colDescuento])||0 : 0;
-    var producto  = colProducto>=0 && r[colProducto]!=null ? String(r[colProducto]).trim() : '';
-    var ventaBase = colVentaBase>=0 && r[colVentaBase]!=null ? parseFloat(r[colVentaBase]) : null;
-    var nombreTitular = colNombre>=0 && r[colNombre]!=null ? String(r[colNombre]) : '';
-
-    if (!zonas[zona]) zonas[zona] = {};
-    if (!zonas[zona][titular]) zonas[zona][titular] = [];
-    zonas[zona][titular].push({
-      marca: marca, producto: producto, descuento: descuento,
-      ventaBase: (ventaBase==null || isNaN(ventaBase)) ? null : Math.round(ventaBase*1000)/1000,
-      instalacionEspejo: instEsp, nombreTitular: nombreTitular
+  });
+  if (!candidates.length) throw new Error(problems.join('; ') || 'No se encontró una hoja con Zona, Titular, Marca, Producto, Nro Instalación y Venta Base. Se conservaron los datos anteriores.');
+  return candidates.sort(function(a,b){return Number(_espejoNorm(b.sheetName)==='bd espejos')-Number(_espejoNorm(a.sheetName)==='bd espejos');});
+}
+function _parseEspejoCandidate(candidate, mk) {
+  var c=candidate.columnas, zonas={}, errors=[], omitted=[], seen={};
+  candidate.rows.slice(candidate.headerRow+1).forEach(function(r, index) {
+    var rowNumber=candidate.headerRow+index+2;
+    var get=function(key){return c[key]!=null && c[key]>=0 ? r[c[key]] : null;};
+    if (!r.some(function(v){return v!=null && String(v).trim()!=='';})) return;
+    var zona=String(get('zona') || '').trim().toUpperCase();
+    if (/total/i.test(zona) || /^total/i.test(String(get('titular') || ''))) {
+      omitted.push('Fila '+rowNumber+': total de resumen'); return;
+    }
+    // Algunos archivos tienen dos columnas Activo. NO/RET en cualquiera
+    // desactiva la fila; el blanco por sí solo no significa inactivo.
+    var inactive=candidate.rows[candidate.headerRow].some(function(v, i) {
+      return _espejoNorm(v)==='activo' && /^(no|ret|inactivo)$/.test(_espejoNorm(r[i]));
     });
+    if(inactive){omitted.push('Fila '+rowNumber+': espejo inactivo/retirado');return;}
+    var titular=String(get('titular') || '').trim(), inst=String(get('instalacion') || '').trim();
+    if(!inst){omitted.push('Fila '+rowNumber+': sin número de instalación espejo');return;}
+    var marca=_espejoNorm(get('marca')), producto=_espejoNorm(get('producto'));
+    var base=_espejoNumber(get('base')), descuento=get('descuento');
+    var reasons=[];
+    if(!/^[A-Z]{1,3}\d{1,3}$/.test(zona)) reasons.push('zona inválida');
+    if(!/^\d+$/.test(titular)) reasons.push('titular inválido');
+    if(!/^\d+$/.test(inst)) reasons.push('número de instalación inválido');
+    if(!/^(solgas|masgas)$/.test(marca)) reasons.push('marca inválida');
+    if(!/^(10|45)\s*kg$/.test(producto)) reasons.push('producto inválido');
+    if(base===null || base<0) reasons.push('Venta Base vacía, no numérica o negativa');
+    var discount=descuento==null || String(descuento).trim()==='' ? 0 : _espejoNumber(descuento);
+    if(discount===null || discount<0) reasons.push('descuento inválido');
+    if(reasons.length){errors.push('Fila '+rowNumber+': '+reasons.join(', '));return;}
+    var entry={marca:marca==='solgas'?'Solgas':'Masgas', producto:producto.replace(/\s*/g,'').replace('kg',' kg'),
+      descuento:discount, ventaBase:Math.round(base*1000)/1000, instalacionEspejo:inst,
+      nombreTitular:String(get('nombre') || '').trim()};
+    var key=[zona,titular,marca,producto.replace(/\s/g,''),inst].join('|');
+    if(seen[key]) {
+      if(seen[key].ventaBase!==entry.ventaBase || seen[key].descuento!==entry.descuento) errors.push('Fila '+rowNumber+': duplicado con base o descuento diferente');
+      else omitted.push('Fila '+rowNumber+': duplicado idéntico');
+      return;
+    }
+    seen[key]=entry;
+    if(!zonas[zona]) zonas[zona]={};
+    if(!zonas[zona][titular]) zonas[zona][titular]=[];
+    zonas[zona][titular].push(entry);
+  });
+  return {zonas:zonas, errors:errors, omitted:omitted, sheetName:candidate.sheetName,
+    headerRow:candidate.headerRow, columnas:c, month:mk};
+}
+function _parseEspejos(wb, mk) {
+  var results=_espejoCandidates(wb,mk).map(function(candidate){return _parseEspejoCandidate(candidate,mk);});
+  var valid=results.filter(function(r){return !r.errors.length && Object.keys(r.zonas).length;});
+  if(!valid.length) {
+    window._ultimoEspejoParseDebug={month:mk, hojas:results};
+    throw new Error('No se cargaron espejos. '+results.map(function(r){return r.sheetName+': '+(r.errors.join('; ') || 'sin filas activas válidas');}).join('\n')+'\nSe conservaron los datos anteriores.');
   }
-  return {zonas: zonas};
+  var signature=function(r){
+    var entries=[];
+    Object.keys(r.zonas).sort().forEach(function(z){Object.keys(r.zonas[z]).sort().forEach(function(t){
+      r.zonas[z][t].forEach(function(e){entries.push(JSON.stringify([z,t,e.marca,e.producto,e.instalacionEspejo,e.ventaBase,e.descuento]));});
+    });});return entries.sort().join('\n');
+  };
+  var distinct=[];
+  valid.forEach(function(r){if(!distinct.some(function(d){return signature(d)===signature(r);})) distinct.push(r);});
+  var chosen=distinct[0];
+  if(distinct.length>1){
+    var labels=distinct.map(function(r,i){
+      var zones=Object.keys(r.zonas), count=zones.reduce(function(n,z){return n+Object.values(r.zonas[z]).reduce(function(s,es){return s+es.length;},0);},0);
+      return (i+1)+'. '+r.sheetName+' · '+mk+' · '+count+' registros · zonas: '+zones.join(', ');
+    });
+    var answer=window.prompt('Hay hojas válidas con datos diferentes. Elige el número de la hoja que deseas cargar:\n'+labels.join('\n'));
+    if(answer===null) return null;
+    var selected=Number(String(answer).trim());
+    if(!Number.isInteger(selected) || selected<1 || selected>distinct.length) throw new Error('Selección de hoja inválida. Se conservaron los datos anteriores.');
+    chosen=distinct[selected-1];
+  }
+  window._ultimoEspejoParseDebug=chosen;
+  return chosen;
+}
+// Construye y guarda la nueva carga antes de sustituir los datos en memoria.
+function _storeEspejos(parsed, mk) {
+  var next=JSON.parse(JSON.stringify(_espejoData));
+  Object.keys(parsed.zonas).forEach(function(z){if(!next[z]) next[z]={};next[z][mk]=parsed.zonas[z];});
+  localStorage.setItem('gastrack_espejo_data',JSON.stringify(next));
+  _espejoData=next;
+}
+function _espejoImportReport(parsed, mk) {
+  var zones=Object.keys(parsed.zonas), count=zones.reduce(function(n,z){return n+Object.values(parsed.zonas[z]).reduce(function(s,es){return s+es.length;},0);},0);
+  var missing=_zonaActual && zones.indexOf(_zonaActual)<0;
+  var message='✓ Espejos '+mk+' · Hoja: '+parsed.sheetName+' · '+count+' registros de instalación/producto · '+zones.length+' zonas';
+  if(_zonaActual) message+=missing?' · Archivo válido, sin la zona activa '+_zonaActual:' · '+_zonaActual+' incluida';
+  if(parsed.omitted.length) message+=' · '+parsed.omitted.length+' filas omitidas';
+  _setStatus(message, missing?'warn':'ok', true);
+  var el=document.getElementById('uploadStatus');
+  if(el) el.style.whiteSpace='normal';
+  if(el && parsed.omitted.length){
+    var details=document.createElement('details'), summary=document.createElement('summary'), body=document.createElement('div');
+    summary.textContent='Ver filas omitidas';body.textContent=parsed.omitted.join('\n');
+    body.style.cssText='white-space:pre-line;max-height:180px;overflow:auto';
+    details.appendChild(summary);details.appendChild(body);el.appendChild(details);
+  }
 }
 
 // Detecta "YYYY-MM" a partir de un nombre de archivo tipo "espejos Setiembre.xlsx"
@@ -4240,11 +4341,13 @@ function _applyCuotasAll() {
   });
 }
 
-function _setStatus(msg,cls) {
+var _uploadStatusTimer;
+function _setStatus(msg,cls,keep) {
   var el=document.getElementById('uploadStatus');
   if (!el) return;
+  clearTimeout(_uploadStatusTimer);
   el.textContent=msg; el.className='upload-status'+(cls?' '+cls:'');
-  if (cls==='ok') setTimeout(function(){el.textContent='';el.className='upload-status';},4000);
+  if (cls==='ok' && !keep) _uploadStatusTimer=setTimeout(function(){el.textContent='';el.className='upload-status';},4000);
 }
 
 // ── Persistencia local (localStorage) — evita recargar Ventas/Cuotas en cada sesión
@@ -4354,31 +4457,12 @@ document.addEventListener('DOMContentLoaded', function() {
     reader.onload=function(evt) {
       try {
         var wb = XLSX.read(evt.target.result,{type:'array'});
-        var parsed = _parseEspejos(wb);
-        var zonaKeys = Object.keys(parsed.zonas);
-        if (!zonaKeys.length) {
-          _setStatus('✗ No se encontraron filas. Verifica que el archivo tenga columna "Nro Instalacion"','err');
-          return;
-        }
         var mk = _detectMesEspejo(file.name);
-        zonaKeys.forEach(function(z) {
-          if (!_espejoData[z]) _espejoData[z] = {};
-          _espejoData[z][mk] = parsed.zonas[z];
-        });
-        _saveEspejosToStorage();
+        var parsed = _parseEspejos(wb, mk);
+        if (!parsed) { _setStatus('Carga de espejos cancelada. Se conservaron los datos anteriores.', 'ok'); return; }
+        _storeEspejos(parsed, mk);
         render();
-        var nInst = zonaKeys.reduce(function(s,z){ return s + Object.keys(parsed.zonas[z]).length; }, 0);
-        // Chequeo de sanidad: si salen demasiadas "zonas" o la zona activa no
-        // está entre ellas, probablemente el parser leyó columnas corridas
-        // (ej. un RUC de Titular en vez de un código de Zona) — avisar en vez
-        // de fallar en silencio.
-        if (zonaKeys.length > 40) {
-          _setStatus('⚠ Espejos ' + mk + ': se detectaron ' + zonaKeys.length + ' "zonas" (demasiadas — revisa las columnas del archivo, ej. "' + zonaKeys[0] + '"). Avísale a Claude con este mensaje.', 'err');
-        } else if (_zonaActual && zonaKeys.indexOf(_zonaActual) === -1) {
-          _setStatus('⚠ Espejos ' + mk + ' cargado (' + zonaKeys.length + ' zonas: ' + zonaKeys.join(', ') + '), pero tu zona activa "' + _zonaActual + '" no está entre ellas.', 'err');
-        } else {
-          _setStatus('✓ Espejos ' + mk + ': ' + nInst + ' instalaciones en ' + zonaKeys.length + ' zona(s)', 'ok');
-        }
+        _espejoImportReport(parsed, mk);
       } catch(err){_setStatus('✗ '+err.message,'err');console.error(err);}
     };
     reader.readAsArrayBuffer(file); e.target.value='';
